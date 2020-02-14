@@ -1,4 +1,5 @@
 import request from '../../api/request'
+import utils from '../../utils'
 
 const state = {
   // TaskList
@@ -6,13 +7,15 @@ const state = {
   taskListTotalCount: 0,
   taskForm: {},
   taskLog: '',
+  currentLogIndex: 0,
   taskResultsData: [],
   taskResultsColumns: [],
   taskResultsTotalCount: 0,
   // filter
   filter: {
     node_id: '',
-    spider_id: ''
+    spider_id: '',
+    status: ''
   },
   // pagination
   pageNum: 1,
@@ -35,6 +38,32 @@ const getters = {
       }
     }
     return keys
+  },
+  logData (state) {
+    const data = state.taskLog.split('\n')
+      .map((d, i) => {
+        return {
+          index: i + 1,
+          data: d,
+          active: state.currentLogIndex === i + 1
+        }
+      })
+    if (state.taskForm && state.taskForm.status === 'running') {
+      data.push({
+        index: data.length + 1,
+        data: '###LOG_END###'
+      })
+      data.push({
+        index: data.length + 1,
+        data: ''
+      })
+    }
+    return data
+  },
+  errorLogData (state, getters) {
+    return getters.logData.filter(d => {
+      return d.data.match(utils.log.errorRegex)
+    })
   }
 }
 
@@ -47,6 +76,9 @@ const mutations = {
   },
   SET_TASK_LOG (state, value) {
     state.taskLog = value
+  },
+  SET_CURRENT_LOG_INDEX (state, value) {
+    state.currentLogIndex = value
   },
   SET_TASK_RESULTS_DATA (state, value) {
     state.taskResultsData = value
@@ -89,7 +121,8 @@ const actions = {
       page_num: state.pageNum,
       page_size: state.pageSize,
       node_id: state.filter.node_id || undefined,
-      spider_id: state.filter.spider_id || undefined
+      spider_id: state.filter.spider_id || undefined,
+      status: state.filter.status || undefined
     })
       .then(response => {
         commit('SET_TASK_LIST', response.data.data || [])
@@ -102,8 +135,12 @@ const actions = {
         dispatch('getTaskList')
       })
   },
+  deleteTaskMultiple ({ state }, ids) {
+    return request.delete(`/tasks_multiple`, {
+      ids: ids
+    })
+  },
   getTaskLog ({ state, commit }, id) {
-    commit('SET_TASK_LOG', '')
     return request.get(`/tasks/${id}/log`)
       .then(response => {
         commit('SET_TASK_LOG', response.data.data)
@@ -120,10 +157,26 @@ const actions = {
         commit('SET_TASK_RESULTS_TOTAL_COUNT', response.data.total)
       })
   },
+  async getTaskResultExcel ({ state, commit }, id) {
+    const { data } = await request.request('GET', '/tasks/' + id + '/results/download', {}, {
+      responseType: 'blob' // important
+    })
+    const downloadUrl = window.URL.createObjectURL(new Blob([data]))
+
+    const link = document.createElement('a')
+
+    link.href = downloadUrl
+
+    link.setAttribute('download', 'data.csv') // any other extension
+
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  },
   cancelTask ({ state, dispatch }, id) {
     return request.post(`/tasks/${id}/cancel`)
       .then(() => {
-        dispatch('getTaskData')
+        dispatch('getTaskData', id)
       })
   }
 }

@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"crawlab/constants"
 	"crawlab/model"
 	"crawlab/services"
 	"github.com/gin-gonic/gin"
@@ -15,11 +14,7 @@ func GetScheduleList(c *gin.Context) {
 		HandleError(http.StatusInternalServerError, c, err)
 		return
 	}
-	c.JSON(http.StatusOK, Response{
-		Status:  "ok",
-		Message: "success",
-		Data:    results,
-	})
+	HandleSuccessData(c, results)
 }
 
 func GetSchedule(c *gin.Context) {
@@ -30,11 +25,8 @@ func GetSchedule(c *gin.Context) {
 		HandleError(http.StatusInternalServerError, c, err)
 		return
 	}
-	c.JSON(http.StatusOK, Response{
-		Status:  "ok",
-		Message: "success",
-		Data:    result,
-	})
+
+	HandleSuccessData(c, result)
 }
 
 func PostSchedule(c *gin.Context) {
@@ -46,13 +38,14 @@ func PostSchedule(c *gin.Context) {
 		HandleError(http.StatusBadRequest, c, err)
 		return
 	}
-	newItem.Id = bson.ObjectIdHex(id)
 
-	// 如果node_id为空，则置为空ObjectId
-	if newItem.NodeId == "" {
-		newItem.NodeId = bson.ObjectIdHex(constants.ObjectIdNull)
+	// 验证cron表达式
+	if err := services.ParserCron(newItem.Cron); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
 	}
 
+	newItem.Id = bson.ObjectIdHex(id)
 	// 更新数据库
 	if err := model.UpdateSchedule(bson.ObjectIdHex(id), newItem); err != nil {
 		HandleError(http.StatusInternalServerError, c, err)
@@ -65,10 +58,7 @@ func PostSchedule(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
-		Status:  "ok",
-		Message: "success",
-	})
+	HandleSuccess(c)
 }
 
 func PutSchedule(c *gin.Context) {
@@ -80,10 +70,14 @@ func PutSchedule(c *gin.Context) {
 		return
 	}
 
-	// 如果node_id为空，则置为空ObjectId
-	if item.NodeId == "" {
-		item.NodeId = bson.ObjectIdHex(constants.ObjectIdNull)
+	// 验证cron表达式
+	if err := services.ParserCron(item.Cron); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
 	}
+
+	// 加入用户ID
+	item.UserId = services.GetCurrentUser(c).Id
 
 	// 更新数据库
 	if err := model.AddSchedule(item); err != nil {
@@ -97,10 +91,7 @@ func PutSchedule(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
-		Status:  "ok",
-		Message: "success",
-	})
+	HandleSuccess(c)
 }
 
 func DeleteSchedule(c *gin.Context) {
@@ -118,8 +109,25 @@ func DeleteSchedule(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, Response{
-		Status:  "ok",
-		Message: "success",
-	})
+	HandleSuccess(c)
+}
+
+// 停止定时任务
+func DisableSchedule(c *gin.Context) {
+	id := c.Param("id")
+	if err := services.Sched.Disable(bson.ObjectIdHex(id)); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
+	}
+	HandleSuccess(c)
+}
+
+// 运行定时任务
+func EnableSchedule(c *gin.Context) {
+	id := c.Param("id")
+	if err := services.Sched.Enable(bson.ObjectIdHex(id)); err != nil {
+		HandleError(http.StatusInternalServerError, c, err)
+		return
+	}
+	HandleSuccess(c)
 }

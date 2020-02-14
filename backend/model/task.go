@@ -4,7 +4,6 @@ import (
 	"crawlab/constants"
 	"crawlab/database"
 	"github.com/apex/log"
-	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
 	"runtime/debug"
 	"time"
@@ -19,11 +18,14 @@ type Task struct {
 	NodeId          bson.ObjectId `json:"node_id" bson:"node_id"`
 	LogPath         string        `json:"log_path" bson:"log_path"`
 	Cmd             string        `json:"cmd" bson:"cmd"`
+	Param           string        `json:"param" bson:"param"`
 	Error           string        `json:"error" bson:"error"`
 	ResultCount     int           `json:"result_count" bson:"result_count"`
 	WaitDuration    float64       `json:"wait_duration" bson:"wait_duration"`
 	RuntimeDuration float64       `json:"runtime_duration" bson:"runtime_duration"`
 	TotalDuration   float64       `json:"total_duration" bson:"total_duration"`
+	Pid             int           `json:"pid" bson:"pid"`
+	UserId          bson.ObjectId `json:"user_id" bson:"user_id"`
 
 	// 前端数据
 	SpiderName string `json:"spider_name"`
@@ -60,6 +62,7 @@ func (t *Task) Save() error {
 	defer s.Close()
 	t.UpdateTs = time.Now()
 	if err := c.UpdateId(t.Id, t); err != nil {
+		log.Errorf("update task error: %s", err.Error())
 		debug.PrintStack()
 		return err
 	}
@@ -92,7 +95,7 @@ func (t *Task) GetResults(pageNum int, pageSize int) (results []interface{}, tot
 	query := bson.M{
 		"task_id": t.Id,
 	}
-	if err = c.Find(query).Skip((pageNum - 1) * pageSize).Limit(pageSize).Sort("-create_ts").All(&results); err != nil {
+	if err = c.Find(query).Skip((pageNum - 1) * pageSize).Limit(pageSize).All(&results); err != nil {
 		return
 	}
 
@@ -115,22 +118,12 @@ func GetTaskList(filter interface{}, skip int, limit int, sortKey string) ([]Tas
 
 	for i, task := range tasks {
 		// 获取爬虫名称
-		spider, err := task.GetSpider()
-		if err == mgo.ErrNotFound {
-			// do nothing
-		} else if err != nil {
-			return tasks, err
-		} else {
+		if spider, err := task.GetSpider(); err == nil {
 			tasks[i].SpiderName = spider.DisplayName
 		}
 
 		// 获取节点名称
-		node, err := task.GetNode()
-		if err == mgo.ErrNotFound {
-			// do nothing
-		} else if err != nil {
-			return tasks, err
-		} else {
+		if node, err := task.GetNode(); err == nil {
 			tasks[i].NodeName = node.Name
 		}
 	}
@@ -144,6 +137,8 @@ func GetTaskListTotal(filter interface{}) (int, error) {
 	var result int
 	result, err := c.Find(filter).Count()
 	if err != nil {
+		log.Errorf(err.Error())
+		debug.PrintStack()
 		return result, err
 	}
 	return result, nil
@@ -155,6 +150,7 @@ func GetTask(id string) (Task, error) {
 
 	var task Task
 	if err := c.FindId(id).One(&task); err != nil {
+		log.Infof("get task error: %s, id: %s", err.Error(), id)
 		debug.PrintStack()
 		return task, err
 	}
@@ -169,6 +165,8 @@ func AddTask(item Task) error {
 	item.UpdateTs = time.Now()
 
 	if err := c.Insert(&item); err != nil {
+		log.Errorf(err.Error())
+		debug.PrintStack()
 		return err
 	}
 	return nil
@@ -180,6 +178,8 @@ func RemoveTask(id string) error {
 
 	var result Task
 	if err := c.FindId(id).One(&result); err != nil {
+		log.Errorf(err.Error())
+		debug.PrintStack()
 		return err
 	}
 
@@ -190,6 +190,37 @@ func RemoveTask(id string) error {
 	return nil
 }
 
+func RemoveTaskByStatus(status string) error {
+	tasks, err := GetTaskList(bson.M{"status": status}, 0, constants.Infinite, "-create_ts")
+	if err != nil {
+		log.Error("get tasks error:" + err.Error())
+	}
+	for _, task := range tasks {
+		if err := RemoveTask(task.Id); err != nil {
+			log.Error("remove task error:" + err.Error())
+			continue
+		}
+	}
+	return nil
+}
+
+// 删除task by spider_id
+func RemoveTaskBySpiderId(id bson.ObjectId) error {
+	tasks, err := GetTaskList(bson.M{"spider_id": id}, 0, constants.Infinite, "-create_ts")
+	if err != nil {
+		log.Error("get tasks error:" + err.Error())
+	}
+
+	for _, task := range tasks {
+		if err := RemoveTask(task.Id); err != nil {
+			log.Error("remove task error:" + err.Error())
+			continue
+		}
+	}
+	return nil
+}
+
+// task 总数
 func GetTaskCount(query interface{}) (int, error) {
 	s, c := database.GetCol("tasks")
 	defer s.Close()
@@ -207,7 +238,7 @@ func GetDailyTaskStats(query bson.M) ([]TaskDailyItem, error) {
 	defer s.Close()
 
 	// 起始日期
-	startDate := time.Now().Add(- 30 * 24 * time.Hour)
+	startDate := time.Now().Add(-30 * 24 * time.Hour)
 	endDate := time.Now()
 
 	// query
@@ -292,6 +323,7 @@ func GetDailyTaskStats(query bson.M) ([]TaskDailyItem, error) {
 	return dailyItems, nil
 }
 
+// 更新task的结果数
 func UpdateTaskResultCount(id string) (err error) {
 	// 获取任务
 	task, err := GetTask(id)
@@ -322,6 +354,28 @@ func UpdateTaskResultCount(id string) (err error) {
 	task.ResultCount = resultCount
 	if err := task.Save(); err != nil {
 		log.Errorf(err.Error())
+		debug.PrintStack()
+		return err
+	}
+	return nil
+}
+
+func UpdateTaskToAbnormal(nodeId bson.ObjectId) error {
+	s, c := database.GetCol("tasks")
+	defer s.Close()
+
+	selector := bson.M{
+		"node_id": nodeId,
+		"status":  constants.StatusRunning,
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"status": constants.StatusAbnormal,
+		},
+	}
+	_, err := c.UpdateAll(selector, update)
+	if err != nil {
+		log.Errorf("update task to abnormal error: %s,  node_id : %s", err.Error(), nodeId.Hex())
 		debug.PrintStack()
 		return err
 	}

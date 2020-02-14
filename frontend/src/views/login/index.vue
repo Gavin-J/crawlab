@@ -34,6 +34,14 @@
           @keyup.enter.native="onKeyEnter"
         />
       </el-form-item>
+      <el-form-item v-if="isSignUp" prop="email" style="margin-bottom: 28px;">
+        <el-input
+          v-model="loginForm.email"
+          name="email"
+          :placeholder="$t('Email')"
+          @keyup.enter.native="onKeyEnter"
+        />
+      </el-form-item>
       <el-form-item style="border: none">
         <el-button v-if="isSignUp" :loading="loading" type="primary" style="width:100%;"
                    @click.native.prevent="handleSignup">
@@ -48,7 +56,7 @@
         <div class="left">
           <span v-if="!isSignUp" class="forgot-password">{{$t('Forgot Password')}}</span>
         </div>
-        <div class="right">
+        <div class="right" v-if="setting.allow_register === 'Y'">
           <span v-if="isSignUp">{{$t('Has Account')}}, </span>
           <span v-if="isSignUp" class="sign-in" @click="$router.push('/login')">{{$t('Sign-in')}} ></span>
           <span v-if="!isSignUp">{{$t('New to Crawlab')}}, </span>
@@ -57,13 +65,18 @@
       </div>
       <div class="tips">
         <span>{{$t('Initial Username/Password')}}: admin/admin</span>
-        <a href="https://github.com/tikazyq/crawlab" target="_blank" style="float:right">
-          <img src="https://img.shields.io/badge/github-crawlab-blue">
+        <a href="https://github.com/crawlab-team/crawlab" target="_blank" style="float:right">
+          <img src="https://img.shields.io/github/stars/crawlab-team/crawlab?logo=github">
         </a>
       </div>
       <div class="lang">
         <span @click="setLang('zh')" :class="lang==='zh'?'active':''">中文</span>
         <span @click="setLang('en')" :class="lang==='en'?'active':''">English</span>
+      </div>
+      <div v-if="isShowMobileWarning" class="mobile-warning">
+        <el-alert type="error" :closable="false">
+          {{$t('You are running on a mobile device, which is not optimized yet. Please try with a laptop or desktop.')}}
+        </el-alert>
       </div>
     </el-form>
   </div>
@@ -104,7 +117,8 @@ export default {
       loginForm: {
         username: '',
         password: '',
-        confirmPassword: ''
+        confirmPassword: '',
+        email: ''
       },
       loginRules: {
         username: [{ required: true, trigger: 'blur', validator: validateUsername }],
@@ -112,10 +126,14 @@ export default {
         confirmPassword: [{ required: true, trigger: 'blur', validator: validateConfirmPass }]
       },
       loading: false,
-      pwdType: 'password'
+      pwdType: 'password',
+      isShowMobileWarning: false
     }
   },
   computed: {
+    ...mapState('setting', [
+      'setting'
+    ]),
     ...mapState('lang', [
       'lang'
     ]),
@@ -136,7 +154,7 @@ export default {
             this.$router.push({ path: this.redirect || '/' })
             this.$store.dispatch('user/getInfo')
           }).catch(() => {
-            this.$message.error(this.$t('Error when logging in (Please check username and password)'))
+            this.$message.error(this.$t('Error when logging in (Please read documentation Q&A)'))
             this.loading = false
           })
         }
@@ -167,7 +185,11 @@ export default {
     }
   },
   mounted () {
-    initCanvas()
+    if (window.innerWidth >= 1024) {
+      initCanvas()
+    } else {
+      this.isShowMobileWarning = true
+    }
   }
 }
 
@@ -340,7 +362,7 @@ const initCanvas = () => {
 </style>
 
 <style rel="stylesheet/scss" lang="scss" scoped>
-  $bg: transparent;
+  $bg: white;
   $dark_gray: #889aa4;
   $light_gray: #aaa;
   .login-container {
@@ -443,5 +465,15 @@ const initCanvas = () => {
         text-decoration: underline;
       }
     }
+
+    .mobile-warning {
+      margin-top: 20px;
+    }
+
+  }
+</style>
+<style scoped>
+  .mobile-warning >>> .el-alert .el-alert__description {
+    font-size: 1.2rem;
   }
 </style>

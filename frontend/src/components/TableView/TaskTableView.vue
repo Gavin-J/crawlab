@@ -15,6 +15,11 @@
           <a class="a-tag" @click="onClickSpider(scope.row)">{{scope.row.spider_name}}</a>
         </template>
       </el-table-column>
+      <el-table-column property="param" :label="$t('Parameters')" width="120">
+        <template slot-scope="scope">
+          <span>{{scope.row.param}}</span>
+        </template>
+      </el-table-column>
       <el-table-column property="result_count" :label="$t('Results Count')" width="60" align="right">
         <template slot-scope="scope">
           <span>{{scope.row.result_count}}</span>
@@ -76,6 +81,9 @@ export default {
         this.clicked = false
       }, 100)
       this.$router.push(`/spiders/${row.spider_id}`)
+      if (this.$route.path.match(/\/nodes\//)) {
+        this.$st.sendEv('节点详情', '概览', '查看爬虫')
+      }
     },
     onClickNode (row) {
       this.clicked = true
@@ -83,9 +91,19 @@ export default {
         this.clicked = false
       }, 100)
       this.$router.push(`/nodes/${row.node_id}`)
+      if (this.$route.path.match(/\/spiders\//)) {
+        this.$st.sendEv('爬虫详情', '概览', '查看节点')
+      }
     },
     onClickTask (row) {
-      if (!this.clicked) this.$router.push(`/tasks/${row._id}`)
+      if (!this.clicked) {
+        this.$router.push(`/tasks/${row._id}`)
+        if (this.$route.path.match(/\/nodes\//)) {
+          this.$st.sendEv('节点详情', '概览', '查看任务')
+        } else if (this.$route.path.match(/\/spiders\//)) {
+          this.$st.sendEv('爬虫详情', '概览', '查看任务')
+        }
+      }
     },
     onRefresh () {
       if (this.$route.path.split('/')[1] === 'spiders') {

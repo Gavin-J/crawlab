@@ -18,6 +18,7 @@ import 'codemirror/mode/go/go.js'
 import 'codemirror/mode/shell/shell.js'
 import 'codemirror/mode/markdown/markdown.js'
 import 'codemirror/mode/php/php.js'
+import 'codemirror/mode/yaml/yaml.js'
 
 export default {
   name: 'FileDetail',
@@ -38,16 +39,19 @@ export default {
     },
     options () {
       return {
-        mode: this.lanaguage,
+        mode: this.language,
         theme: 'darcula',
         styleActiveLine: true,
+        smartIndent: true,
+        indentUnit: 4,
         lineNumbers: true,
         line: true,
         matchBrackets: true
       }
     },
-    lanaguage () {
+    language () {
       const fileName = this.$store.state.file.currentPath
+      if (!fileName) return ''
       if (fileName.match(/\.js$/)) {
         return 'text/javascript'
       } else if (fileName.match(/\.py$/)) {
@@ -60,6 +64,8 @@ export default {
         return 'text/x-php'
       } else if (fileName.match(/\.md$/)) {
         return 'text/x-markdown'
+      } else if (fileName.match('Spiderfile')) {
+        return 'text/x-yaml'
       } else {
         return 'text'
       }
@@ -74,7 +80,7 @@ export default {
 <style scoped>
   .file-content {
     border: 1px solid #eaecef;
-    height: 480px;
+    height: calc(100vh - 256px);
   }
 
   .file-content >>> .CodeMirror {
